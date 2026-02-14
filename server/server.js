@@ -9,39 +9,40 @@ app.use(express.static(path.join(__dirname, "../public")));
 const server = http.createServer(app);
 const io = new Server(server);
 
-let users = {};
+const rooms = {}; // roomId -> [socketIds]
 
 io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    socket.on("register", (username) => {
-        users[username] = socket.id;
-        socket.username = username;
-        console.log(username, "registered");
-    });
+    socket.on("join-room", (roomId) => {
+        socket.join(roomId);
+        if (!rooms[roomId]) rooms[roomId] = [];
+        rooms[roomId].push(socket.id);
 
-    socket.on("start-call", ({ from }) => {
-        socket.broadcast.emit("incoming-call", { from });
-    });
+        // Notify existing users in the room
+        socket.to(roomId).emit("user-joined", { id: socket.id });
 
-    socket.on("offer", ({ offer, to }) => {
-        io.to(users[to]).emit("offer", { offer, from: socket.username });
-    });
+        // Send existing users to the new user
+        const otherUsers = rooms[roomId].filter(id => id !== socket.id);
+        socket.emit("existing-users", { users: otherUsers });
 
-    socket.on("answer", ({ answer, to }) => {
-        io.to(users[to]).emit("answer", { answer });
-    });
+        socket.on("offer", ({ offer, to }) => {
+            io.to(to).emit("offer", { offer, from: socket.id });
+        });
 
-    socket.on("ice-candidate", ({ candidate, to }) => {
-        io.to(users[to]).emit("ice-candidate", { candidate });
-    });
+        socket.on("answer", ({ answer, to }) => {
+            io.to(to).emit("answer", { answer, from: socket.id });
+        });
 
-    socket.on("disconnect", () => {
-        delete users[socket.username];
-        console.log("User disconnected:", socket.username);
+        socket.on("ice-candidate", ({ candidate, to }) => {
+            io.to(to).emit("ice-candidate", { candidate, from: socket.id });
+        });
+
+        socket.on("disconnect", () => {
+            rooms[roomId] = rooms[roomId].filter(id => id !== socket.id);
+            socket.to(roomId).emit("user-left", { id: socket.id });
+        });
     });
 });
 
-server.listen(3000, () => {
-    console.log("Server running on http://localhost:3000");
-});
+server.listen(3000, () => console.log("Server running on http://localhost:3000"));

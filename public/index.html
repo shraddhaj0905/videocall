@@ -1,25 +1,92 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Simple Video Call</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>Room Video Call</title>
 </head>
 <body>
-<h2>Simple Video Call</h2>
+<h2>Room Video Call</h2>
 
-<input type="text" id="username" placeholder="Enter your name">
-<button id="registerBtn">Register</button>
-<button id="startCallBtn" disabled>Start Call</button>
+<input type="text" id="roomId" placeholder="Enter Room ID">
+<button id="joinBtn">Join Room</button>
 
-<div id="callNotification" style="display:none;">
-    <span id="callerName"></span> is calling
-    <button id="acceptBtn">Accept</button>
-</div>
-
-<video id="localVideo" autoplay muted></video>
-<video id="remoteVideo" autoplay></video>
+<video id="localVideo" autoplay muted style="width:300px;"></video>
+<video id="remoteVideo" autoplay style="width:300px;"></video>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="js/script.js"></script>
+<script>
+const socket = io();
+let localStream, pcs = {};
+let roomId;
+
+// Join room
+document.getElementById("joinBtn").onclick = async () => {
+    roomId = document.getElementById("roomId").value.trim();
+    if(!roomId) return alert("Enter room ID");
+
+    localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+    document.getElementById("localVideo").srcObject = localStream;
+
+    socket.emit("join-room", roomId);
+};
+
+// Handle existing users in room
+socket.on("existing-users", async (data) => {
+    for(const id of data.users) {
+        await createPeerConnection(id, true); // caller
+    }
+});
+
+// New user joined
+socket.on("user-joined", async (data) => {
+    await createPeerConnection(data.id, false); // answerer
+});
+
+// Create peer connection
+async function createPeerConnection(peerId, isCaller){
+    const pc = new RTCPeerConnection({
+        iceServers:[
+            { urls:"stun:stun.l.google.com:19302" },
+            { urls:"turn:numb.viagenie.ca", username:"webrtc@live.com", credential:"muazkh" }
+        ]
+    });
+
+    pcs[peerId] = pc;
+
+    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+    pc.ontrack = e => { document.getElementById("remoteVideo").srcObject = e.streams[0]; }
+
+    pc.onicecandidate = e => {
+        if(e.candidate) socket.emit("ice-candidate", { candidate:e.candidate, to:peerId });
+    }
+
+    if(isCaller){
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit("offer", { offer, to: peerId });
+    }
+}
+
+// Offer received
+socket.on("offer", async (data) => {
+    const pc = pcs[data.from] || await createPeerConnection(data.from, false);
+    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit("answer", { answer, to:data.from });
+});
+
+// Answer received
+socket.on("answer", async (data) => {
+    const pc = pcs[data.from];
+    if(pc) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+});
+
+// ICE candidates
+socket.on("ice-candidate", async (data) => {
+    const pc = pcs[data.from];
+    if(pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+});
+</script>
 </body>
 </html>
