@@ -5,20 +5,17 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-
 <h2>Simple Video Call</h2>
 
 <input type="text" id="username" placeholder="Enter your name">
 <button id="registerBtn">Register</button>
 <button id="startCallBtn" disabled>Start Call</button>
 
-<!-- Notification Div -->
 <div id="callNotification" style="display:none;">
     <span id="callerName"></span> is calling
     <button id="acceptBtn">Accept</button>
 </div>
 
-<!-- Video Elements -->
 <video id="localVideo" autoplay muted></video>
 <video id="remoteVideo" autoplay></video>
 

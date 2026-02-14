@@ -4,48 +4,34 @@ const { Server } = require("socket.io");
 const path = require("path");
 
 const app = express();
-
-// Serve frontend
 app.use(express.static(path.join(__dirname, "../public")));
 
 const server = http.createServer(app);
 const io = new Server(server);
 
-let users = {}; // store connected users: username -> socket.id
+let users = {};
 
 io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    // Register username
     socket.on("register", (username) => {
         users[username] = socket.id;
         socket.username = username;
         console.log(username, "registered");
     });
 
-    // Start call: notify all other users
-    socket.on("start-call", () => {
-        console.log(socket.username, "started call");
-        socket.broadcast.emit("incoming-call", { from: socket.username });
+    socket.on("start-call", ({ from }) => {
+        socket.broadcast.emit("incoming-call", { from });
     });
 
-    // Accept call: tells caller who accepted
-    socket.on("accept-call", ({ to }) => {
-        const acceptorSocket = socket.id;
-        io.to(users[to]).emit("call-accepted", { from: socket.username });
-    });
-
-    // WebRTC offer
     socket.on("offer", ({ offer, to }) => {
         io.to(users[to]).emit("offer", { offer, from: socket.username });
     });
 
-    // WebRTC answer
     socket.on("answer", ({ answer, to }) => {
         io.to(users[to]).emit("answer", { answer });
     });
 
-    // ICE candidates
     socket.on("ice-candidate", ({ candidate, to }) => {
         io.to(users[to]).emit("ice-candidate", { candidate });
     });
@@ -56,5 +42,6 @@ io.on("connection", (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(3000, () => {
+    console.log("Server running on http://localhost:3000");
+});
