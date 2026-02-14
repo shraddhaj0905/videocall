@@ -19,9 +19,9 @@ document.getElementById("registerBtn").onclick = async () => {
     alert("Registered successfully as " + myName);
 };
 
-// Start call (automatically pick other user)
+// Start call (notify other users)
 document.getElementById("startCallBtn").onclick = () => {
-    socket.emit("start-call", { from: myName });
+    socket.emit("start-call");
 };
 
 // Incoming call notification
@@ -37,7 +37,7 @@ document.getElementById("acceptBtn").onclick = async () => {
     await startCall(true);
 };
 
-// Start WebRTC
+// Start WebRTC call
 async function startCall(isAnswer = false) {
     peerConnection = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -46,20 +46,20 @@ async function startCall(isAnswer = false) {
     // Add local tracks
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-    // Receive remote stream
+    // Listen for remote stream
     peerConnection.ontrack = (event) => {
         document.getElementById("remoteVideo").srcObject = event.streams[0];
     };
 
     // ICE candidate
     peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && remoteUsername) {
             socket.emit("ice-candidate", { candidate: event.candidate, to: remoteUsername });
         }
     };
 
+    // Caller creates offer
     if (!isAnswer) {
-        // Caller
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         socket.emit("offer", { offer, to: remoteUsername });
