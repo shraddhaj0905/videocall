@@ -10,21 +10,21 @@ document.getElementById("registerBtn").onclick = async () => {
     myName = document.getElementById("username").value.trim();
     if (!myName) return alert("Enter your name");
 
-    // Get local stream immediately
+    // Get local video/audio
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     document.getElementById("localVideo").srcObject = localStream;
 
     socket.emit("register", myName);
     document.getElementById("startCallBtn").disabled = false;
-    alert("Registered successfully as " + myName);
+    alert("Registered as " + myName);
 };
 
-// Start call (notify other users)
+// Start call: notify other users
 document.getElementById("startCallBtn").onclick = () => {
     socket.emit("start-call");
 };
 
-// Incoming call notification
+// Incoming call
 socket.on("incoming-call", (data) => {
     remoteUsername = data.from;
     document.getElementById("callerName").innerText = data.from;
@@ -34,10 +34,18 @@ socket.on("incoming-call", (data) => {
 // Accept call
 document.getElementById("acceptBtn").onclick = async () => {
     document.getElementById("callNotification").style.display = "none";
+    // Tell caller we accepted
+    socket.emit("accept-call", { to: remoteUsername });
     await startCall(true);
 };
 
-// Start WebRTC call
+// Caller receives that someone accepted
+socket.on("call-accepted", async (data) => {
+    remoteUsername = data.from;
+    await startCall(false); // start call as caller
+});
+
+// Start WebRTC
 async function startCall(isAnswer = false) {
     peerConnection = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -46,20 +54,20 @@ async function startCall(isAnswer = false) {
     // Add local tracks
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-    // Listen for remote stream
+    // Remote stream
     peerConnection.ontrack = (event) => {
         document.getElementById("remoteVideo").srcObject = event.streams[0];
     };
 
-    // ICE candidate
+    // ICE candidates
     peerConnection.onicecandidate = (event) => {
         if (event.candidate && remoteUsername) {
             socket.emit("ice-candidate", { candidate: event.candidate, to: remoteUsername });
         }
     };
 
-    // Caller creates offer
     if (!isAnswer) {
+        // Caller creates offer
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         socket.emit("offer", { offer, to: remoteUsername });
@@ -69,7 +77,6 @@ async function startCall(isAnswer = false) {
 // Receive offer
 socket.on("offer", async (data) => {
     remoteUsername = data.from;
-    await startCall(true);
     await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
 
     const answer = await peerConnection.createAnswer();

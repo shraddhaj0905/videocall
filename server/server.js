@@ -5,28 +5,34 @@ const path = require("path");
 
 const app = express();
 
-// Serve public folder
+// Serve frontend
 app.use(express.static(path.join(__dirname, "../public")));
 
 const server = http.createServer(app);
 const io = new Server(server);
 
-let users = {}; // store connected users
+let users = {}; // store connected users: username -> socket.id
 
 io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    // register username
+    // Register username
     socket.on("register", (username) => {
         users[username] = socket.id;
         socket.username = username;
         console.log(username, "registered");
     });
 
-    // start call (broadcast to all except self)
+    // Start call: notify all other users
     socket.on("start-call", () => {
         console.log(socket.username, "started call");
         socket.broadcast.emit("incoming-call", { from: socket.username });
+    });
+
+    // Accept call: tells caller who accepted
+    socket.on("accept-call", ({ to }) => {
+        const acceptorSocket = socket.id;
+        io.to(users[to]).emit("call-accepted", { from: socket.username });
     });
 
     // WebRTC offer
@@ -51,6 +57,4 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
