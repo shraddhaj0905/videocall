@@ -49,11 +49,11 @@ socket.on("call-accepted", async (data) => {
 async function startCall(isAnswer = false) {
     peerConnection = new RTCPeerConnection({
   iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun.l.google.com:19302" }, // STUN
     {
-      urls: "turn:your-turn-server-ip-or-domain",
-      username: "user",
-      credential: "pass"
+      urls: "turn:numb.viagenie.ca",          // public TURN server
+      username: "webrtc@live.com",
+      credential: "muazkh"
     }
   ]
 });
