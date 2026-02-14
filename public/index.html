@@ -1,125 +1,89 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Multi-User Video Call</title>
+  <title>Video Call App</title>
   <style>
-    body { text-align:center; font-family:Arial; }
-    video { width:300px; margin:5px; border:2px solid black; }
-    #videos { display:flex; flex-wrap:wrap; justify-content:center; }
+    body { text-align: center; font-family: Arial; }
+    video { width: 300px; margin: 10px; border: 2px solid black; }
   </style>
 </head>
 <body>
 
-<h2>Multi-User Video Call</h2>
+<h2>Real-Time Video Call</h2>
 
-<input id="roomInput" placeholder="Enter Room ID">
-<button onclick="joinRoom()">Join Room</button>
+<input id="roomInput" placeholder="Enter Room ID" />
+<button onclick="joinRoom()">Join</button>
 
-<div id="videos">
-  <video id="localVideo" autoplay muted playsinline></video>
-</div>
+<br><br>
+
+<video id="localVideo" autoplay muted playsinline></video>
+<video id="remoteVideo" autoplay playsinline></video>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
-let localStream;
-const pcs = {};           // peerId -> RTCPeerConnection
-const iceQueue = {};      // peerId -> queued ICE candidates
+let peerConnection;
 let roomId;
 
-const iceServers = { iceServers: [
-    { urls:"stun:stun.l.google.com:19302" },
-    { urls:"turn:numb.viagenie.ca", username:"webrtc@live.com", credential:"muazkh" }
-]};
+const iceServers = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" }
+  ]
+};
 
-async function joinRoom(){
-    roomId = document.getElementById("roomInput").value;
-    if(!roomId) return alert("Enter room ID");
+async function joinRoom() {
+  roomId = document.getElementById("roomInput").value;
 
-    localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-    document.getElementById("localVideo").srcObject = localStream;
+  peerConnection = new RTCPeerConnection(iceServers);
 
-    socket.emit("join-room", roomId);
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: true
+  });
+
+  document.getElementById("localVideo").srcObject = stream;
+
+  stream.getTracks().forEach(track => {
+    peerConnection.addTrack(track, stream);
+  });
+
+  peerConnection.ontrack = (event) => {
+    document.getElementById("remoteVideo").srcObject = event.streams[0];
+  };
+
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit("ice-candidate", {
+        candidate: event.candidate,
+        roomId
+      });
+    }
+  };
+
+  socket.emit("join-room", roomId);
 }
 
-// Handle existing users
-socket.on("existing-users", async (data) => {
-    for(const id of data.users){
-        await createPeerConnection(id, true);
-    }
+socket.on("ready", async () => {
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+  socket.emit("offer", { offer, roomId });
 });
 
-// New user joined
-socket.on("user-joined", async (data) => {
-    await createPeerConnection(data.id, false);
+socket.on("offer", async (offer) => {
+  await peerConnection.setRemoteDescription(offer);
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
+  socket.emit("answer", { answer, roomId });
 });
 
-// User left
-socket.on("user-left", (data) => {
-    const videoEl = document.getElementById("video-" + data.id);
-    if(videoEl) videoEl.remove();
-    if(pcs[data.id]){
-        pcs[data.id].close();
-        delete pcs[data.id];
-    }
+socket.on("answer", async (answer) => {
+  await peerConnection.setRemoteDescription(answer);
 });
 
-// Create peer connection
-async function createPeerConnection(peerId, isCaller){
-    const pc = new RTCPeerConnection(iceServers);
-    pcs[peerId] = pc;
-    iceQueue[peerId] = [];
-
-    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-
-    // Create remote video element
-    const remoteVideo = document.createElement("video");
-    remoteVideo.id = "video-" + peerId;
-    remoteVideo.autoplay = true;
-    remoteVideo.playsInline = true;
-    document.getElementById("videos").appendChild(remoteVideo);
-
-    pc.ontrack = e => { remoteVideo.srcObject = e.streams[0]; }
-
-    pc.onicecandidate = e => {
-        if(e.candidate){
-            socket.emit("ice-candidate", { candidate:e.candidate, to:peerId });
-        }
-    }
-
-    // Create offer if caller
-    if(isCaller){
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit("offer", { offer, to:peerId });
-    }
-}
-
-// Offer received
-socket.on("offer", async (data) => {
-    if(!pcs[data.from]) await createPeerConnection(data.from, false);
-    const pc = pcs[data.from];
-    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    socket.emit("answer", { answer, to:data.from });
-});
-
-// Answer received
-socket.on("answer", async (data) => {
-    const pc = pcs[data.from];
-    if(pc) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-});
-
-// ICE candidate received
-socket.on("ice-candidate", async (data) => {
-    const pc = pcs[data.from];
-    if(pc && pc.remoteDescription){
-        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-    } else {
-        if(!iceQueue[data.from]) iceQueue[data.from] = [];
-        iceQueue[data.from].push(data.candidate);
-    }
+socket.on("ice-candidate", async (candidate) => {
+  if (candidate) {
+    await peerConnection.addIceCandidate(candidate);
+  }
 });
 </script>
 
