@@ -48,8 +48,16 @@ socket.on("call-accepted", async (data) => {
 // Start WebRTC
 async function startCall(isAnswer = false) {
     peerConnection = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-    });
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    {
+      urls: "turn:your-turn-server-ip-or-domain",
+      username: "user",
+      credential: "pass"
+    }
+  ]
+});
+
 
     // Add local tracks
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
